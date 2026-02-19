@@ -1,4 +1,4 @@
-﻿uid_reversed;uid_canon;anschlagmittel;serviceartikel_nr;wll_kg;letzte_pruefung (YYYY-MM-DD);naechste_pruefung (YYYY-MM-DD);status (OK/BLOCKED)
+﻿uid_reversed;uid_canon;anschlagmittel;serviceartikel_nr;wll_kg;letzte_pruefung;naechste_pruefung;status
 49:7D:0D:11:53:01:04:E0;E0040153110D7D49;Rundschlinge;SA9876543;1000;2025-09-12;2026-09-11;OK
 49:7D:0D:11:53:01:04:E1;E1040153110D7D49;Rundschlinge;SA9876544;2000;2025-06-01;2026-06-01;OK
 49:7D:0D:11:53:01:04:E2;E2040153110D7D49;Kettengehänge 2-strang;SA9876545;3150;2025-03-15;2026-03-15;OK
