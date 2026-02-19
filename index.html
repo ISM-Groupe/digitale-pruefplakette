@@ -90,7 +90,7 @@ function parseCsv(text) {
   const lines = text.replace(/\r/g, "").split("\n").filter(l => l.trim().length > 0);
   if (lines.length === 0) return [];
 
-  const delimiter = (lines[0].includes(";") && !lines[0].includes(",")) ? ";" : ";"; 
+  const delimiter = lines[0].split(";").length > lines[0].split(",").length ? ";" : ","; 
   // In DE export is usually ';'. If you use ',', it will still often work if you change to ',' below.
   // If you want auto: use:
   // const delimiter = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
@@ -259,3 +259,4 @@ function doSearch(rawInput) {
 </script>
 </body>
 </html>
+
