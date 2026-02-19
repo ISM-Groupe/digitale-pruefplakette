@@ -58,6 +58,7 @@
 
       <div class="label">Nächste Prüfung</div>
       <div class="value" id="r_naechste"></div>
+<div class="small" id="r_naechste_in"></div>
 
       <div class="row small">
         Link: <a id="shareLink" href="#">diesen Datensatz teilen</a>
@@ -93,6 +94,26 @@ function parseIsoDate(value) {
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return null;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+function daysUntil(dateObj) {
+  if (!dateObj) return null;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  const d = new Date(dateObj);
+  d.setHours(0,0,0,0);
+
+  const ms = d - today;
+  return Math.round(ms / (1000 * 60 * 60 * 24));
+}
+
+function formatDueText(nextDateObj) {
+  const n = daysUntil(nextDateObj);
+  if (n === null) return "";
+  if (n < 0) return `Überfällig seit ${Math.abs(n)} Tagen`;
+  if (n === 0) return "Heute fällig";
+  if (n === 1) return "Morgen fällig";
+  return `In ${n} Tagen fällig`;
 }
 
 /* ---------------- tiny CSV parser ----------------
@@ -203,6 +224,9 @@ function showResult(asset, usedUid) {
   document.getElementById("r_serviceartikel").textContent = asset.serviceartikel_nr || "-";
   document.getElementById("r_letzte").textContent = formatDateDE(asset.letzte_pruefung);
   document.getElementById("r_naechste").textContent = formatDateDE(asset.naechste_pruefung);
+  const dueEl = document.getElementById("r_naechste_in");
+  dueEl.textContent = formatDueText(nextDate);
+  dueEl.textContent = nextDate ? formatDueText(nextDate) : "";
 
   const share = document.getElementById("shareLink");
   const url = new URL(window.location.href);
@@ -283,3 +307,4 @@ function doSearch(rawInput) {
 </script>
 </body>
 </html>
+
