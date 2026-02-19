@@ -18,7 +18,7 @@
     .label { color:#6b7280; font-size:12px; margin-top:14px; }
     .value { font-size:16px; font-weight:700; margin-top:2px; }
     .footer { text-align:center; margin-top:18px; color:#9ca3af; font-size:12px; }
-    .small { color:#6b7280; font-size:12px; margin-top:12px; }
+    .small { color:#6b7280; font-size:12px; margin-top:6px; line-height:1.35; }
     .row { border-top:1px solid #eef2f7; margin-top:14px; padding-top:14px; }
     a { color:#2563eb; text-decoration:none; }
     a:hover { text-decoration:underline; }
@@ -58,7 +58,7 @@
 
       <div class="label">Nächste Prüfung</div>
       <div class="value" id="r_naechste"></div>
-<div class="small" id="r_naechste_in"></div>
+      <div class="small" id="r_naechste_in"></div>
 
       <div class="row small">
         Link: <a id="shareLink" href="#">diesen Datensatz teilen</a>
@@ -106,7 +106,6 @@ function daysUntil(dateObj) {
   const ms = d - today;
   return Math.round(ms / (1000 * 60 * 60 * 24));
 }
-
 function formatDueText(nextDateObj) {
   const n = daysUntil(nextDateObj);
   if (n === null) return "";
@@ -176,8 +175,8 @@ function setBadge(kind, customText) {
 
   if (kind === "missing") {
     badge.style.background = "#FEF9C3";   /* light yellow */
-    badge.style.color = "#854D0E";        /* dark yellow/brown */
-    dot.style.background = "#F59E0B";     /* amber */
+    badge.style.color = "#854D0E";
+    dot.style.background = "#F59E0B";
     text.textContent = customText || "Daten fehlen";
     return;
   }
@@ -224,8 +223,8 @@ function showResult(asset, usedUid) {
   document.getElementById("r_serviceartikel").textContent = asset.serviceartikel_nr || "-";
   document.getElementById("r_letzte").textContent = formatDateDE(asset.letzte_pruefung);
   document.getElementById("r_naechste").textContent = formatDateDE(asset.naechste_pruefung);
+
   const dueEl = document.getElementById("r_naechste_in");
-  dueEl.textContent = formatDueText(nextDate);
   dueEl.textContent = nextDate ? formatDueText(nextDate) : "";
 
   const share = document.getElementById("shareLink");
@@ -307,4 +306,3 @@ function doSearch(rawInput) {
 </script>
 </body>
 </html>
-
