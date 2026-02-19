@@ -60,7 +60,6 @@
       <div class="value" id="r_naechste"></div>
 
       <div class="row small">
-        Debug: Treffer über UID <b id="r_uid_used"></b><br>
         Link: <a id="shareLink" href="#">diesen Datensatz teilen</a>
       </div>
     </div>
@@ -82,19 +81,28 @@ function looksLikeHexUid(hex) {
   return /^[0-9A-F]+$/.test(hex) && hex.length >= 8 && hex.length % 2 === 0;
 }
 
-/* ---------------- tiny CSV parser (simple, good for our data) ----------------
-   - supports delimiter ';' or ','
-   - supports quoted fields (basic)
+/* ---------------- Date helpers ---------------- */
+function formatDateDE(value) {
+  const s = (value || "").trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return value ? value : "-";
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+function parseIsoDate(value) {
+  const s = (value || "").trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+/* ---------------- tiny CSV parser ----------------
+   supports delimiter ';' or ','
 */
 function parseCsv(text) {
   const lines = text.replace(/\r/g, "").split("\n").filter(l => l.trim().length > 0);
   if (lines.length === 0) return [];
 
-  const delimiter = lines[0].split(";").length > lines[0].split(",").length ? ";" : ","; 
-  // In DE export is usually ';'. If you use ',', it will still often work if you change to ',' below.
-  // If you want auto: use:
-  // const delimiter = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
-
+  const delimiter = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
   const header = splitCsvLine(lines[0], delimiter).map(h => h.trim());
   const rows = [];
 
@@ -106,7 +114,6 @@ function parseCsv(text) {
   }
   return rows;
 }
-
 function splitCsvLine(line, delimiter) {
   const out = [];
   let cur = "";
@@ -116,18 +123,15 @@ function splitCsvLine(line, delimiter) {
     const ch = line[i];
 
     if (ch === '"') {
-      // handle double quotes inside quotes
       if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
       else inQuotes = !inQuotes;
       continue;
     }
-
     if (!inQuotes && ch === delimiter) {
       out.push(cur);
       cur = "";
       continue;
     }
-
     cur += ch;
   }
   out.push(cur);
@@ -135,25 +139,33 @@ function splitCsvLine(line, delimiter) {
 }
 
 /* ---------------- UI helpers ---------------- */
-function setBadge(status) {
+function setBadge(kind, customText) {
   const badge = document.getElementById("badge");
   const dot = document.getElementById("badgeDot");
   const text = document.getElementById("badgeText");
   badge.style.display = "flex";
 
-  const s = (status || "").toUpperCase().trim();
-
-  if (s === "BLOCKED" || s === "GESPERRT" || s === "NOK") {
+  if (kind === "blocked") {
     badge.style.background = "#fee2e2";
     badge.style.color = "#991b1b";
     dot.style.background = "#ef4444";
-    text.textContent = "Gesperrt / Nicht verwenden";
-  } else {
-    badge.style.background = "#e8f6ee";
-    badge.style.color = "#1d7a3a";
-    dot.style.background = "#2bb24c";
-    text.textContent = "Betriebssicher";
+    text.textContent = customText || "Gesperrt / Nicht verwenden";
+    return;
   }
+
+  if (kind === "missing") {
+    badge.style.background = "#FEF9C3";   /* light yellow */
+    badge.style.color = "#854D0E";        /* dark yellow/brown */
+    dot.style.background = "#F59E0B";     /* amber */
+    text.textContent = customText || "Daten fehlen";
+    return;
+  }
+
+  // ok
+  badge.style.background = "#e8f6ee";
+  badge.style.color = "#1d7a3a";
+  dot.style.background = "#2bb24c";
+  text.textContent = customText || "Betriebssicher";
 }
 
 function showError(msg) {
@@ -166,14 +178,31 @@ function showResult(asset, usedUid) {
   document.getElementById("message").textContent = "";
   document.getElementById("result").style.display = "block";
 
-  setBadge(asset.status);
+  // Decide status (manual status, overdue, missing dates)
+  const s = (asset.status || "").toUpperCase().trim();
+  const lastDate = parseIsoDate(asset.letzte_pruefung);
+  const nextDate = parseIsoDate(asset.naechste_pruefung);
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  const missingDates = (!asset.letzte_pruefung || !asset.naechste_pruefung || !lastDate || !nextDate);
+
+  if (missingDates) {
+    setBadge("missing", "Daten fehlen (Prüfdatum)");
+  } else if (s === "BLOCKED" || s === "GESPERRT" || s === "NOK") {
+    setBadge("blocked", "Gesperrt / Nicht verwenden");
+  } else if (nextDate < today) {
+    setBadge("blocked", "Überfällig – nicht verwenden");
+  } else {
+    setBadge("ok", "Betriebssicher");
+  }
 
   document.getElementById("r_anschlagmittel").textContent = asset.anschlagmittel || "-";
   document.getElementById("r_wll").textContent = asset.wll_kg || "-";
   document.getElementById("r_serviceartikel").textContent = asset.serviceartikel_nr || "-";
-  document.getElementById("r_letzte").textContent = asset.letzte_pruefung || "-";
-  document.getElementById("r_naechste").textContent = asset.naechste_pruefung || "-";
-  document.getElementById("r_uid_used").textContent = usedUid || "-";
+  document.getElementById("r_letzte").textContent = formatDateDE(asset.letzte_pruefung);
+  document.getElementById("r_naechste").textContent = formatDateDE(asset.naechste_pruefung);
 
   const share = document.getElementById("shareLink");
   const url = new URL(window.location.href);
@@ -185,14 +214,12 @@ function showResult(asset, usedUid) {
 let ASSETS = [];
 
 async function loadAssets() {
-  // cache-bust so updates in GitHub are picked up quickly
   const res = await fetch("./data.csv?ts=" + Date.now(), { cache: "no-store" });
   if (!res.ok) throw new Error("data.csv konnte nicht geladen werden (GitHub Pages?)");
 
   const text = await res.text();
   const rows = parseCsv(text);
 
-  // normalize + store
   ASSETS = rows.map(r => ({
     uid_canon: normalizeUid(r.uid_canon),
     uid_reversed: normalizeUid(r.uid_reversed),
@@ -217,11 +244,9 @@ function doSearch(rawInput) {
     return;
   }
 
-  // 1) direct
   let asset = findAssetByUid(uidNorm);
   if (asset) { showResult(asset, uidNorm); return; }
 
-  // 2) reversed bytes
   const uidRev = reverseBytes(uidNorm);
   if (uidRev) {
     asset = findAssetByUid(uidRev);
@@ -248,7 +273,6 @@ function doSearch(rawInput) {
   btn.addEventListener("click", () => doSearch(input.value));
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(input.value); });
 
-  // URL parameter support: ?uid=...
   const params = new URLSearchParams(window.location.search);
   const uidFromUrl = params.get("uid");
   if (uidFromUrl) {
@@ -259,4 +283,3 @@ function doSearch(rawInput) {
 </script>
 </body>
 </html>
-
