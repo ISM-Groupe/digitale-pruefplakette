@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Digitale Prüfplakette</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f5f7fb; margin:0; padding:24px; }
+    .card { max-width:520px; margin:0 auto; background:#fff; border-radius:16px; padding:20px; box-shadow:0 6px 18px rgba(0,0,0,.08); }
+    .badge { display:flex; gap:10px; align-items:center; padding:12px 14px; border-radius:12px; font-weight:700; margin-bottom:12px; }
+    .dot { width:14px; height:14px; border-radius:50%; display:inline-block; }
+    h2 { margin:6px 0 6px 0; }
+    .hint { color:#6b7280; font-size:12px; margin:8px 0 10px; line-height:1.4; }
+    input { width:100%; padding:12px; border-radius:10px; border:1px solid #d1d5db; font-size:16px; box-sizing:border-box; }
+    button { width:100%; margin-top:10px; padding:12px; border-radius:10px; border:0; background:#2563eb; color:#fff; font-weight:700; font-size:16px; cursor:pointer; }
+    button:disabled { background:#93c5fd; cursor:not-allowed; }
+    .msg { margin-top:12px; color:#b91c1c; }
+    .label { color:#6b7280; font-size:12px; margin-top:14px; }
+    .value { font-size:16px; font-weight:700; margin-top:2px; }
+    .footer { text-align:center; margin-top:18px; color:#9ca3af; font-size:12px; }
+    .small { color:#6b7280; font-size:12px; margin-top:12px; }
+    .row { border-top:1px solid #eef2f7; margin-top:14px; padding-top:14px; }
+    a { color:#2563eb; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div id="badge" class="badge" style="display:none;">
+      <span class="dot" id="badgeDot"></span>
+      <span id="badgeText"></span>
+    </div>
+
+    <h2>Serviceartikel / Anschlagmittel</h2>
+    <div class="hint">
+      NFC-Seriennummer (UID) einfügen: z.B. <b>49:7D:...</b> oder <b>E004...</b>.<br>
+      Beide Reihenfolgen werden automatisch erkannt.<br>
+      Tipp: Du kannst auch einen Link verwenden: <b>?uid=...</b>
+    </div>
+
+    <input id="uidInput" placeholder="NFC-Seriennummer (UID) eingeben…" />
+    <button id="btnSearch">Suchen</button>
+
+    <div id="message" class="msg"></div>
+
+    <div id="result" style="display:none;">
+      <div class="label">Anschlagmittel</div>
+      <div class="value" id="r_anschlagmittel"></div>
+
+      <div class="label">Tragfähigkeit (WLL)</div>
+      <div class="value"><span id="r_wll"></span> kg</div>
+
+      <div class="label">Serviceartikel-Nr.</div>
+      <div class="value" id="r_serviceartikel"></div>
+
+      <div class="label">Letzte Prüfung</div>
+      <div class="value" id="r_letzte"></div>
+
+      <div class="label">Nächste Prüfung</div>
+      <div class="value" id="r_naechste"></div>
+
+      <div class="row small">
+        Debug: Treffer über UID <b id="r_uid_used"></b><br>
+        Link: <a id="shareLink" href="#">diesen Datensatz teilen</a>
+      </div>
+    </div>
+
+    <div class="footer">Digitale Prüfplakette</div>
+  </div>
+
+<script>
+/* ---------------- UID helpers ---------------- */
+function normalizeUid(input) {
+  return (input || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+}
+function reverseBytes(hex) {
+  if (!hex || hex.length % 2 !== 0) return null;
+  const bytes = hex.match(/../g);
+  return bytes.reverse().join("");
+}
+function looksLikeHexUid(hex) {
+  return /^[0-9A-F]+$/.test(hex) && hex.length >= 8 && hex.length % 2 === 0;
+}
+
+/* ---------------- tiny CSV parser (simple, good for our data) ----------------
+   - supports delimiter ';' or ','
+   - supports quoted fields (basic)
+*/
+function parseCsv(text) {
+  const lines = text.replace(/\r/g, "").split("\n").filter(l => l.trim().length > 0);
+  if (lines.length === 0) return [];
+
+  const delimiter = (lines[0].includes(";") && !lines[0].includes(",")) ? ";" : ";"; 
+  // In DE export is usually ';'. If you use ',', it will still often work if you change to ',' below.
+  // If you want auto: use:
+  // const delimiter = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
+
+  const header = splitCsvLine(lines[0], delimiter).map(h => h.trim());
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCsvLine(lines[i], delimiter);
+    const obj = {};
+    header.forEach((h, idx) => obj[h] = (cols[idx] ?? "").trim());
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function splitCsvLine(line, delimiter) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (ch === '"') {
+      // handle double quotes inside quotes
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && ch === delimiter) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+
+    cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/* ---------------- UI helpers ---------------- */
+function setBadge(status) {
+  const badge = document.getElementById("badge");
+  const dot = document.getElementById("badgeDot");
+  const text = document.getElementById("badgeText");
+  badge.style.display = "flex";
+
+  const s = (status || "").toUpperCase().trim();
+
+  if (s === "BLOCKED" || s === "GESPERRT" || s === "NOK") {
+    badge.style.background = "#fee2e2";
+    badge.style.color = "#991b1b";
+    dot.style.background = "#ef4444";
+    text.textContent = "Gesperrt / Nicht verwenden";
+  } else {
+    badge.style.background = "#e8f6ee";
+    badge.style.color = "#1d7a3a";
+    dot.style.background = "#2bb24c";
+    text.textContent = "Betriebssicher";
+  }
+}
+
+function showError(msg) {
+  document.getElementById("result").style.display = "none";
+  document.getElementById("badge").style.display = "none";
+  document.getElementById("message").textContent = msg;
+}
+
+function showResult(asset, usedUid) {
+  document.getElementById("message").textContent = "";
+  document.getElementById("result").style.display = "block";
+
+  setBadge(asset.status);
+
+  document.getElementById("r_anschlagmittel").textContent = asset.anschlagmittel || "-";
+  document.getElementById("r_wll").textContent = asset.wll_kg || "-";
+  document.getElementById("r_serviceartikel").textContent = asset.serviceartikel_nr || "-";
+  document.getElementById("r_letzte").textContent = asset.letzte_pruefung || "-";
+  document.getElementById("r_naechste").textContent = asset.naechste_pruefung || "-";
+  document.getElementById("r_uid_used").textContent = usedUid || "-";
+
+  const share = document.getElementById("shareLink");
+  const url = new URL(window.location.href);
+  url.searchParams.set("uid", usedUid);
+  share.href = url.toString();
+}
+
+/* ---------------- Data loading & search ---------------- */
+let ASSETS = [];
+
+async function loadAssets() {
+  // cache-bust so updates in GitHub are picked up quickly
+  const res = await fetch("./data.csv?ts=" + Date.now(), { cache: "no-store" });
+  if (!res.ok) throw new Error("data.csv konnte nicht geladen werden (GitHub Pages?)");
+
+  const text = await res.text();
+  const rows = parseCsv(text);
+
+  // normalize + store
+  ASSETS = rows.map(r => ({
+    uid_canon: normalizeUid(r.uid_canon),
+    uid_reversed: normalizeUid(r.uid_reversed),
+    anschlagmittel: r.anschlagmittel,
+    serviceartikel_nr: r.serviceartikel_nr,
+    wll_kg: r.wll_kg,
+    letzte_pruefung: r.letzte_pruefung,
+    naechste_pruefung: r.naechste_pruefung,
+    status: r.status
+  }));
+}
+
+function findAssetByUid(uidNorm) {
+  return ASSETS.find(a => a.uid_canon === uidNorm || (a.uid_reversed && a.uid_reversed === uidNorm));
+}
+
+function doSearch(rawInput) {
+  const uidNorm = normalizeUid(rawInput);
+
+  if (!looksLikeHexUid(uidNorm)) {
+    showError("Bitte eine gültige UID eingeben (nur Hex, gerade Länge).");
+    return;
+  }
+
+  // 1) direct
+  let asset = findAssetByUid(uidNorm);
+  if (asset) { showResult(asset, uidNorm); return; }
+
+  // 2) reversed bytes
+  const uidRev = reverseBytes(uidNorm);
+  if (uidRev) {
+    asset = findAssetByUid(uidRev);
+    if (asset) { showResult(asset, uidRev); return; }
+  }
+
+  showError("Kein Serviceartikel zu dieser UID gefunden.");
+}
+
+(async function main() {
+  const btn = document.getElementById("btnSearch");
+  const input = document.getElementById("uidInput");
+
+  btn.disabled = true;
+  try {
+    await loadAssets();
+  } catch (e) {
+    showError("Fehler: " + e.message);
+    return;
+  } finally {
+    btn.disabled = false;
+  }
+
+  btn.addEventListener("click", () => doSearch(input.value));
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(input.value); });
+
+  // URL parameter support: ?uid=...
+  const params = new URLSearchParams(window.location.search);
+  const uidFromUrl = params.get("uid");
+  if (uidFromUrl) {
+    input.value = uidFromUrl;
+    doSearch(uidFromUrl);
+  }
+})();
+</script>
+</body>
+</html>
